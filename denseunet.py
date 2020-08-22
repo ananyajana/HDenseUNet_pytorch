@@ -153,24 +153,24 @@ class denseUnet(nn.Module):
 
         # the other half of the UNet
         self.up = nn.Upsample(scale_factor=2)
-        self.conv = nn.Conv2d(2*nb_filter3, 2208, kernel_size=1, padding= 0)
+        self.conv = nn.Conv2d(nb_filter3, 2208, kernel_size=1, padding= 0)
 
-        self.conv0 = nn.Conv2d(2208, 768, kernel_size=3, padding= 1)
+        self.conv0 = nn.Conv2d(2*2208, 768, kernel_size=3, padding= 1)
         self.bn0 =  nn.BatchNorm2d(768, momentum= 1)
         self.ac0 = nn.ReLU(inplace=True)
         
         self.up1 = nn.Upsample(scale_factor=2)
-        self.conv1 = nn.Conv2d(768, 384, kernel_size=3, padding= 1)
+        self.conv1 = nn.Conv2d(2*768, 384, kernel_size=3, padding= 1)
         self.bn1 = nn.BatchNorm2d(384, momentum= 1)
         self.ac1 = nn.ReLU(inplace=True)
 
         self.up2 = nn.Upsample(scale_factor=2)
-        self.conv2 = nn.Conv2d(384, 96, kernel_size=3, padding= 1)
+        self.conv2 = nn.Conv2d(2*384, 96, kernel_size=3, padding= 1)
         self.bn2 = nn.BatchNorm2d(96, momentum= 1)
         self.ac2 = nn.ReLU(inplace=True)
 
         self.up3 = nn.Upsample(scale_factor=2)
-        self.conv3 = nn.Conv2d(96, 96, kernel_size=3, padding= 1)
+        self.conv3 = nn.Conv2d(2*96, 96, kernel_size=3, padding= 1)
         self.bn3 = nn.BatchNorm2d(96, momentum= 1)
         self.ac3 = nn.ReLU(inplace=True)
 
