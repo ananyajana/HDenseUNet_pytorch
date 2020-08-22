@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -38,6 +39,8 @@ class dense_block(nn.Module):
 
     def forward(self, x):
         features = [x]
+        # are the module names dictionary sorted?
+        # else how do we process denseLayer1 before denseLayer2
         for name, layer in self.named_children():
             new_feature = layer(torch.cat(features, 1))
             features.append(new_feature)
@@ -47,14 +50,16 @@ class dense_block(nn.Module):
 class _Transition(nn.Sequential):
     def __init__(self, num_input, num_output, drop=0):
         super(_Transition, self).__init__()
-        self.add_module('norm', nn.BatchNorm2d(num_input))
-        self.add_module('scale', Scale(num_input))
-        self.add_module('relu', nn.ReLU(inplace=True))
-        self.add_module('conv2d', nn.Conv2d(num_input, num_output, (1, 1), bias=False))
-        self.add_module('pool', nn.AvgPool2d(kernel_size= 2, stride= 2))
+
+        self.drop = drop
+        self.norm = nn.BatchNorm2d(num_input)
+        self.scale = Scale(num_input)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv =  nn.Conv2d(num_input, num_output, (1, 1), bias=False)
+        #self.pool = nn.AvgPool2d(kernel_size= 2, stride= 2)
     # added this part as it was not present in the original code
     def forward(self, x):
-        out = self.conv2d(self.relu(self.scale(self.norm(x))))
+        out = self.conv(self.relu(self.scale(self.norm(x))))
         if (self.drop > 0):
             out = F.dropout(out, p= self.drop)
         return F.avg_pool2d(out, 2)
@@ -87,12 +92,21 @@ class conv_block(nn.Sequential):
 
         return out
 
-
 def weight_init(net):
-    for m in net.modules():
+    for name, m in net.named_children():
+        print('name: ', name)
         if isinstance(m, nn.Conv2d):
-            nn.init.normal_(m.weight, 0, 0.02)
-            nn.init.zeros_(m.bias)
+            print(m.weight)
+            print(m.bias)
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
+
+def init_weights(m):
+    if isinstance(m, nn.Conv2d):
+        print(m.weight)
+        print(m.bias)
+        m.weight.data.normal_(0, 0.02)
+        m.bias.data.zero_()
 
 class denseUnet(nn.Module):
     def __init__(self, growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96, drop_rate=0, weight_decay=1e-4, num_classes=1000, reduction=0.0):
@@ -105,110 +119,126 @@ class denseUnet(nn.Module):
                                 padding=3, bias=False)
         self.norm0_ = nn.BatchNorm2d(nb_filter, eps= eps)
         self.scale0_ = Scale(nb_filter)
-        self.relu0_ = nn.ReLU(inplace=True)
+        self.ac0_ = nn.ReLU(inplace=True)
         self.pool0_ = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # dense block followed by transition
-        self.block1 = dense_block(num_layeri[0], nb_filter, growth_rate, drop_rate)
+        num_layer = block_config
+        self.block1 = dense_block(num_layer[0], nb_filter, growth_rate, drop_rate)
         nb_filter += num_layer[0] * growth_rate
-        self.trans1 = _Transition(nb_filter, nb_filter * compression)
-        nb_filter = nb_filter * compression
+        self.trans1 = _Transition(nb_filter, math.floor(nb_filter * compression))
+        nb_filter = int(nb_filter * compression)
 
-        self.block2 = dense_block(num_layeri[1], nb_filter, growth_rate, drop_rate)
+        self.block2 = dense_block(num_layer[1], nb_filter, growth_rate, drop_rate)
         nb_filter += num_layer[1] * growth_rate
-        self.trans2 = _Transition(nb_filter, nb_filter * compression)
-        nb_filter = nb_filter * compression
+        self.trans2 = _Transition(nb_filter, math.floor(nb_filter * compression))
+        nb_filter = int(nb_filter * compression)
 
-        self.block3 = dense_block(num_layeri[2], nb_filter, growth_rate, drop_rate)
+        self.block3 = dense_block(num_layer[2], nb_filter, growth_rate, drop_rate)
         nb_filter += num_layer[2] * growth_rate
-        self.trans3 = _Transition(nb_filter, nb_filter * compression)
-        nb_filter = nb_filter * compression
+        # to store the filter from the 3rd denso block as this will determine the
+        # number of input channels for self.conv
+        nb_filter3 = nb_filter
+        self.trans3 = _Transition(nb_filter, math.floor(nb_filter * compression))
+        nb_filter = int(nb_filter * compression)
 
-        self.block4 = dense_block(num_layeri[3], nb_filter, growth_rate, drop_rate)
+        self.block4 = dense_block(num_layer[3], nb_filter, growth_rate, drop_rate)
         nb_filter += num_layer[3] * growth_rate
+        self.bn2_ = nn.BatchNorm2d(nb_filter, eps= eps, momentum= 1)
+        self.scale2_ = Scale(nb_filter)
+        self.ac2_ = nn.ReLU(inplace= True)
 
-        self.norm5 = nn.BatchNorm2d(nb_filter, eps= eps, momentum= 1)
-        self.scale5 = Scale(nb_filter)
-        self.relu5 = nn.ReLU(inplace= True)
 
+        print('nb_filter: ', nb_filter)
 
         # the other half of the UNet
         self.up = nn.Upsample(scale_factor=2)
-        self.conv = nn.Conv2d(nb_filter, 2208, (1, 1), padding= 1)
+        self.conv = nn.Conv2d(2*nb_filter3, 2208, kernel_size=1, padding= 0)
 
-        self.conv0 = nn.Conv2d(2208, 768, (3, 3), padding= 1)
+        self.conv0 = nn.Conv2d(2208, 768, kernel_size=3, padding= 1)
         self.bn0 =  nn.BatchNorm2d(768, momentum= 1)
         self.ac0 = nn.ReLU(inplace=True)
         
         self.up1 = nn.Upsample(scale_factor=2)
-        self.conv1 = nn.Conv2d(768, 384, (3, 3), padding= 1)
+        self.conv1 = nn.Conv2d(768, 384, kernel_size=3, padding= 1)
         self.bn1 = nn.BatchNorm2d(384, momentum= 1)
         self.ac1 = nn.ReLU(inplace=True)
 
         self.up2 = nn.Upsample(scale_factor=2)
-        self.conv2 = nn.Conv2d(384, 96, (3, 3), padding= 1)
+        self.conv2 = nn.Conv2d(384, 96, kernel_size=3, padding= 1)
         self.bn2 = nn.BatchNorm2d(96, momentum= 1)
         self.ac2 = nn.ReLU(inplace=True)
 
         self.up3 = nn.Upsample(scale_factor=2)
-        self.conv3 = nn.Conv2d(96, 96, (3, 3), padding= 1)
+        self.conv3 = nn.Conv2d(96, 96, kernel_size=3, padding= 1)
         self.bn3 = nn.BatchNorm2d(96, momentum= 1)
-        self.ac4 = nn.ReLU(inplace=True)
+        self.ac3 = nn.ReLU(inplace=True)
 
         self.up4 = nn.Upsample(scale_factor=2)
-        self.conv4 = nn.Conv2d(96, 64, (3, 3), padding= 1)
-        self.dropout = F.Dropout(p=0.3)
+        self.conv4 = nn.Conv2d(96, 64, kernel_size=3, padding= 1)
+        self.dropout = nn.Dropout(p=0.3)
         self.bn4 = nn.BatchNorm2d(64, momentum= 1)
         self.ac4 = nn.ReLU(inplace=True)
 
         # last convolution
         self.conv5 = nn.Conv2d(64, 3, kernel_size=1)
 
-        weight_init(self)
+        init_weights(self)
+        #weight_init(self)
 
     # this part is not UNet, this is encoder decoder
     def forward(self, x):
         box = []
         out = self.ac0_(self.scale0_(self.norm0_(self.conv0_(x))))
         box.append(out)
-        out = self.pool0(out)
+        print('box[0] size: ', box[0].size())
+        out = self.pool0_(out)
         
         out = self.block1(out)
         box.append(out)
+        print('box[1] size: ', box[1].size())
         out = self.trans1(out)
         
         out = self.block2(out)
         box.append(out)
+        print('box[2] size: ', box[2].size())
         out = self.trans2(out)
         
         out = self.block3(out)
         box.append(out)
+        print('box[3] size: ', box[3].size())
         out = self.trans3(out)
         
         out = self.block4(out)
 
-        out = self.ac5(self.scale5(self.bn5(out)))
+        out = self.ac2_(self.scale2_(self.bn2_(out)))
         box.append(out)
+        print('box[4] size: ', box[4].size())
+
 
         up0 = self.up(out)
         line0 = self.conv(box[3])
-        up0_sum = add([line0, up0])
+        #up0_sum = add([line0, up0])
+        up0_sum = torch.cat((line0, up0), dim=1)
         out = self.ac0(self.bn0(self.conv0(up0_sum)))
 
         up1 = self.up1(out)
-        up1_sum = add([box[2], up1])
+        #up1_sum = add([box[2], up1])
+        up1_sum = torch.cat((box[2], up1), dim=1)
         out = self.ac1(self.bn1(self.conv1(up1_sum)))
 
 
         up2 = self.up2(out)
-        up2_sum = add([box[1], up2])
+        #up2_sum = add([box[1], up2])
+        up2_sum = torch.cat((box[1], up2), dim=1)
         out = self.ac2(self.bn2(self.conv2(up2_sum)))
 
         up3 = self.up3(out)
-        up3_sum = add([box[0], up3])
+        #up3_sum = add([box[0], up3])
+        up3_sum = torch.cat((box[0], up3), dim=1)
         out = self.ac3(self.bn3(self.conv3(up3_sum)))
 
-        up4 = self.up3(out)
+        up4 = self.up4(out)
         out = self.ac4(self.bn4(self.dropout(self.conv4(up4))))
 
         out = self.conv5(out)
