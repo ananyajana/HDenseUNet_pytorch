@@ -1,5 +1,5 @@
 import torch
-import torch.nn
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as cp
 from collections import OrderedDict
