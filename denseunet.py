@@ -88,62 +88,129 @@ class conv_block(nn.Sequential):
         return out
 
 
+def weight_init(net):
+    for m in net.modules():
+        if isinstance(m, nn.Conv2d):
+            nn.init.normal_(m.weight, 0, 0.02)
+            nn.init.zeros_(m.bias)
+
 class denseUnet(nn.Module):
-    def __init__(self, growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96, drop_rate=0, weight_decay=1e-4, num_classes=1000):
+    def __init__(self, growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96, drop_rate=0, weight_decay=1e-4, num_classes=1000, reduction=0.0):
         super(denseUnet, self).__init__()
         nb_filter = num_init_features
         eps = 1.1e-5
-        self.features = nn.Sequential(OrderedDict([
-            ('conv0', nn.Conv2d(3, nb_filter, kernel_size=7, stride=2,
-                                padding=3, bias=False)),
-            ('norm0', nn.BatchNorm2d(nb_filter, eps= eps)),
-            ('scale0', Scale(nb_filter)),
-            ('relu0', nn.ReLU(inplace=True)),
-            ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
-        ]))
+        compression = 1 - reduction
+        # initial convolution
+        self.conv0_ = nn.Conv2d(3, nb_filter, kernel_size=7, stride=2,
+                                padding=3, bias=False)
+        self.norm0_ = nn.BatchNorm2d(nb_filter, eps= eps)
+        self.scale0_ = Scale(nb_filter)
+        self.relu0_ = nn.ReLU(inplace=True)
+        self.pool0_ = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        for i, num_layer in enumerate(block_config):
-            block = dense_block(num_layer, nb_filter, growth_rate, drop_rate)
-            nb_filter += num_layer * growth_rate
-            self.features.add_module('denseblock%d' % (i + 1), block)
-            if i != len(block_config) - 1:
-                trans = _Transition(nb_filter, nb_filter // 2)
-                self.features.add_module('transition%d' % (i + 1), trans)
-                nb_filter = nb_filter // 2
-                
-        self.features.add_module('norm5', nn.BatchNorm2d(nb_filter, eps= eps, momentum= 1))
-        self.features.add_module('scale5', Scale(nb_filter))
-        self.features.add_module('relu5', nn.ReLU(inplace= True))
+        # dense block followed by transition
+        self.block1 = dense_block(num_layeri[0], nb_filter, growth_rate, drop_rate)
+        nb_filter += num_layer[0] * growth_rate
+        self.trans1 = _Transition(nb_filter, nb_filter * compression)
+        nb_filter = nb_filter * compression
 
-        self.decode = nn.Sequential(OrderedDict([
-            ('up0', nn.Upsample(scale_factor=2)),
-            ('conv2d0', nn.Conv2d(nb_filter, 768, (3, 3), padding= 1)),
-            ('bn0', nn.BatchNorm2d(768, momentum= 1)), 
-            ('ac0', nn.ReLU(inplace=True)),
-            
-            ('up1', nn.Upsample(scale_factor=2)),
-            ('conv2d1', nn.Conv2d(768, 384, (3, 3), padding= 1)),
-            ('bn1', nn.BatchNorm2d(384, momentum= 1)), 
-            ('ac1', nn.ReLU(inplace=True)),
+        self.block2 = dense_block(num_layeri[1], nb_filter, growth_rate, drop_rate)
+        nb_filter += num_layer[1] * growth_rate
+        self.trans2 = _Transition(nb_filter, nb_filter * compression)
+        nb_filter = nb_filter * compression
 
-            ('up2', nn.Upsample(scale_factor=2)),
-            ('conv2d2', nn.Conv2d(384, 96, (3, 3), padding= 1)),
-            ('bn2', nn.BatchNorm2d(96, momentum= 1)), 
-            ('ac2', nn.ReLU(inplace=True)),
+        self.block3 = dense_block(num_layeri[2], nb_filter, growth_rate, drop_rate)
+        nb_filter += num_layer[2] * growth_rate
+        self.trans3 = _Transition(nb_filter, nb_filter * compression)
+        nb_filter = nb_filter * compression
 
-            ('up3', nn.Upsample(scale_factor=2)),
-            ('conv2d3', nn.Conv2d(96, 96, (3, 3), padding= 1)),
-            ('bn3', nn.BatchNorm2d(96, momentum= 1)), 
-            ('ac3', nn.ReLU(inplace=True)),
+        self.block4 = dense_block(num_layeri[3], nb_filter, growth_rate, drop_rate)
+        nb_filter += num_layer[3] * growth_rate
 
-            ('up4', nn.Upsample(scale_factor=2)),
-            ('conv2d4', nn.Conv2d(96, 64, (3, 3), padding= 1)),
-            ('bn4', nn.BatchNorm2d(64, momentum= 1)), 
-            ('ac4', nn.ReLU(inplace=True))
-        ]))
+        self.norm5 = nn.BatchNorm2d(nb_filter, eps= eps, momentum= 1)
+        self.scale5 = Scale(nb_filter)
+        self.relu5 = nn.ReLU(inplace= True)
+
+
+        # the other half of the UNet
+        self.up = nn.Upsample(scale_factor=2)
+        self.conv = nn.Conv2d(nb_filter, 2208, (1, 1), padding= 1)
+
+        self.conv0 = nn.Conv2d(2208, 768, (3, 3), padding= 1)
+        self.bn0 =  nn.BatchNorm2d(768, momentum= 1)
+        self.ac0 = nn.ReLU(inplace=True)
+        
+        self.up1 = nn.Upsample(scale_factor=2)
+        self.conv1 = nn.Conv2d(768, 384, (3, 3), padding= 1)
+        self.bn1 = nn.BatchNorm2d(384, momentum= 1)
+        self.ac1 = nn.ReLU(inplace=True)
+
+        self.up2 = nn.Upsample(scale_factor=2)
+        self.conv2 = nn.Conv2d(384, 96, (3, 3), padding= 1)
+        self.bn2 = nn.BatchNorm2d(96, momentum= 1)
+        self.ac2 = nn.ReLU(inplace=True)
+
+        self.up3 = nn.Upsample(scale_factor=2)
+        self.conv3 = nn.Conv2d(96, 96, (3, 3), padding= 1)
+        self.bn3 = nn.BatchNorm2d(96, momentum= 1)
+        self.ac4 = nn.ReLU(inplace=True)
+
+        self.up4 = nn.Upsample(scale_factor=2)
+        self.conv4 = nn.Conv2d(96, 64, (3, 3), padding= 1)
+        self.dropout = F.Dropout(p=0.3)
+        self.bn4 = nn.BatchNorm2d(64, momentum= 1)
+        self.ac4 = nn.ReLU(inplace=True)
+
+        # last convolution
+        self.conv5 = nn.Conv2d(64, 3, kernel_size=1)
+
+        weight_init(self)
 
     # this part is not UNet, this is encoder decoder
     def forward(self, x):
-        out = self.features(x)
-        out = self.decode(out)
+        box = []
+        out = self.ac0_(self.scale0_(self.norm0_(self.conv0_(x))))
+        box.append(out)
+        out = self.pool0(out)
+        
+        out = self.block1(out)
+        box.append(out)
+        out = self.trans1(out)
+        
+        out = self.block2(out)
+        box.append(out)
+        out = self.trans2(out)
+        
+        out = self.block3(out)
+        box.append(out)
+        out = self.trans3(out)
+        
+        out = self.block4(out)
+
+        out = self.ac5(self.scale5(self.bn5(out)))
+        box.append(out)
+
+        up0 = self.up(out)
+        line0 = self.conv(box[3])
+        up0_sum = add([line0, up0])
+        out = self.ac0(self.bn0(self.conv0(up0_sum)))
+
+        up1 = self.up1(out)
+        up1_sum = add([box[2], up1])
+        out = self.ac1(self.bn1(self.conv1(up1_sum)))
+
+
+        up2 = self.up2(out)
+        up2_sum = add([box[1], up2])
+        out = self.ac2(self.bn2(self.conv2(up2_sum)))
+
+        up3 = self.up3(out)
+        up3_sum = add([box[0], up3])
+        out = self.ac3(self.bn3(self.conv3(up3_sum)))
+
+        up4 = self.up3(out)
+        out = self.ac4(self.bn4(self.dropout(self.conv4(up4))))
+
+        out = self.conv5(out)
+
         return out
