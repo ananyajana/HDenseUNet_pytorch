@@ -56,6 +56,7 @@ class _Transition(nn.Sequential):
         self.scale = Scale(num_input)
         self.relu = nn.ReLU(inplace=True)
         self.conv =  nn.Conv2d(num_input, num_output, (1, 1), bias=False)
+        weight_init(self)
         #self.pool = nn.AvgPool2d(kernel_size= 2, stride= 2)
     # added this part as it was not present in the original code
     def forward(self, x):
@@ -80,7 +81,7 @@ class conv_block(nn.Sequential):
         self.add_module('relu2', nn.ReLU(inplace= True))
         self.add_module('conv2d2', nn.Conv2d(4 * growth_rate, growth_rate, (3, 3), padding = (1,1), bias= False))
         
-    
+        weight_init(self)
     def forward(self, x):
         out = self.conv2d1(self.relu1(self.scale1(self.norm1(x))))
         if (self.drop > 0):
@@ -94,19 +95,11 @@ class conv_block(nn.Sequential):
 
 def weight_init(net):
     for name, m in net.named_children():
-        print('name: ', name)
         if isinstance(m, nn.Conv2d):
-            print(m.weight)
-            print(m.bias)
             m.weight.data.normal_(0, 0.02)
-            m.bias.data.zero_()
+            if m.bias is not None:
+                m.bias.data.zero_()
 
-def init_weights(m):
-    if isinstance(m, nn.Conv2d):
-        print(m.weight)
-        print(m.bias)
-        m.weight.data.normal_(0, 0.02)
-        m.bias.data.zero_()
 
 class denseUnet(nn.Module):
     def __init__(self, growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96, drop_rate=0, weight_decay=1e-4, num_classes=1000, reduction=0.0):
@@ -183,8 +176,8 @@ class denseUnet(nn.Module):
         # last convolution
         self.conv5 = nn.Conv2d(64, 3, kernel_size=1)
 
-        init_weights(self)
-        #weight_init(self)
+        #init_weights(self)
+        weight_init(self)
 
     # this part is not UNet, this is encoder decoder
     def forward(self, x):
