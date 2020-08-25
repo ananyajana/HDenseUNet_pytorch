@@ -43,7 +43,8 @@ model = model.cuda()
 model = torch.nn.DataParallel(model, device_ids=list(
     range(torch.cuda.device_count()))).cuda()
 
-criterion = nn.CrossEntropyLoss()
+#criterion = nn.CrossEntropyLoss()
+criterion = nn.BCEWithLogitsLoss() # sigmoid followed by BCELoss, this is a two class problem
 optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9, nesterov=True)
 
 data_transform = transforms.Compose([
@@ -66,7 +67,8 @@ for i in range(0, len(idx_list), args.batch_size):
         images, masks = train_set[idx]
         images = Variable(images.cuda())
         #masks = masks.long()
-        masks = Variable(masks.long().cuda())        
+        #masks = Variable(masks.long().cuda())  
+        masks = Variable(masks.cuda()) 
         output = model(images)
         masks = masks.squeeze(1)
         output = output.squeeze(1)
