@@ -21,8 +21,11 @@ class LiTSDataset(data.Dataset):
         all_img_keys = list(hdf5_file['CT']['img'].keys())
         all_seg_keys = list(hdf5_file['CT']['seg'].keys())
         
-        img = all_img_keys[index]
-        seg = all_seg_keys[index]
+        img_key = all_img_keys[index]
+        seg_key = all_seg_keys[index]
+        
+        img = hdf5_file['CT']['img'][img_key][()]
+        seg = hdf5_file['CT']['seg'][seg_key][()]
         
         img = Image.fromarray(img.astype('uint8'), 'L')
         seg = Image.fromarray(seg.astype('uint8'), 'L')
