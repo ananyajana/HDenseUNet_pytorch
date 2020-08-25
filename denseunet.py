@@ -102,13 +102,15 @@ def weight_init(net):
 
 
 class denseUnet(nn.Module):
-    def __init__(self, growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96, drop_rate=0, weight_decay=1e-4, num_classes=1000, reduction=0.0):
+    def __init__(self, in_c=1, out_c=2, growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96, drop_rate=0, weight_decay=1e-4, num_classes=1000, reduction=0.0):
         super(denseUnet, self).__init__()
         nb_filter = num_init_features
         eps = 1.1e-5
         compression = 1 - reduction
         # initial convolution
-        self.conv0_ = nn.Conv2d(3, nb_filter, kernel_size=7, stride=2,
+        #self.conv0_ = nn.Conv2d(3, nb_filter, kernel_size=7, stride=2,
+        #                        padding=3, bias=False)
+        self.conv0_ = nn.Conv2d(in_c, nb_filter, kernel_size=7, stride=2,
                                 padding=3, bias=False)
         self.norm0_ = nn.BatchNorm2d(nb_filter, eps= eps)
         self.scale0_ = Scale(nb_filter)
@@ -174,7 +176,9 @@ class denseUnet(nn.Module):
         self.ac4 = nn.ReLU(inplace=True)
 
         # last convolution
-        self.conv5 = nn.Conv2d(64, 3, kernel_size=1)
+        #self.conv5 = nn.Conv2d(64, 3, kernel_size=1)
+        # the output is a segmentation map consisting of two channels(= #classes)
+        self.conv5 = nn.Conv2d(64, out_c, kernel_size=1)
 
         #init_weights(self)
         weight_init(self)
@@ -184,29 +188,29 @@ class denseUnet(nn.Module):
         box = []
         out = self.ac0_(self.scale0_(self.norm0_(self.conv0_(x))))
         box.append(out)
-        print('box[0] size: ', box[0].size())
+        #print('box[0] size: ', box[0].size())
         out = self.pool0_(out)
         
         out = self.block1(out)
         box.append(out)
-        print('box[1] size: ', box[1].size())
+        #print('box[1] size: ', box[1].size())
         out = self.trans1(out)
         
         out = self.block2(out)
         box.append(out)
-        print('box[2] size: ', box[2].size())
+        #print('box[2] size: ', box[2].size())
         out = self.trans2(out)
         
         out = self.block3(out)
         box.append(out)
-        print('box[3] size: ', box[3].size())
+        #print('box[3] size: ', box[3].size())
         out = self.trans3(out)
         
         out = self.block4(out)
 
         out = self.ac2_(self.scale2_(self.bn2_(out)))
         box.append(out)
-        print('box[4] size: ', box[4].size())
+        #print('box[4] size: ', box[4].size())
 
 
         up0 = self.up(out)
