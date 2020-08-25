@@ -47,14 +47,12 @@ src_path = '../../data/LiTS/'
 # if the mode is 'Train' then create the h5 file out of train volumes
 # else if it is in Test mode then create the h5 file out of test 
 # volumes(which do not have corresponding segmentation)
-'''
+
 if train_str in 'Train':
     num_patients = 131
 elif train_str in 'Test':
     num_patients = 70
-'''
-num_patients = 5
-
+#num_patients = 5
 
 # do the train-test split our of the 131 volumes
 train_set_len = math.floor(num_patients * train_test_ratio)
@@ -70,7 +68,6 @@ test_h5_filepath = save_path + '/' + 'test.h5'
 
 train_dataset = h5py.File(train_h5_filepath, 'w')
 test_dataset = h5py.File(test_h5_filepath, 'w')
-
 
 def create_h5(dataset, patients=None):
     cnt = 0 # cnt of total number of images(= segmentations) in the Train set including data from
@@ -117,4 +114,4 @@ def create_h5(dataset, patients=None):
     dataset.close()
 
 create_h5(train_dataset, train_set)
-create_h5(test_dataset, test_set)
+create_h5(test_dataset, test_set
