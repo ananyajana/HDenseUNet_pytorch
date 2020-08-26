@@ -9,7 +9,16 @@ Created on Mon Aug 24 20:18:57 2020
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
+def BCEWithLogits_2ddense(pred=None, target=None):
+    # pass the predictions through a sigmoid layer
+    pred_f = F.sigmoid(pred)
+    # clamping the weights of the tensor
+    pred_f = torch.clamp(pred_f, min=1e-10, max=1.0)
+    # take log of the predicted values
+    loss = -(pred_f.log()*target + (1-target)*(1-pred_f).log()).mean()
+    return loss
 
 
 def dice_loss(pred, target, smooth = 1.):
