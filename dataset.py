@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 from random import randint
 from skimage.transform import resize
-
+import torchvision
 from utils import normalization
 
 def get_len(hdf5_path):
@@ -16,7 +16,6 @@ class LiTSDataset(data.Dataset):
     def __init__(self, hdf5_path, data_transform, random_mirror=False, scale=False):
         super(LiTSDataset, self).__init__()
         self.hdf5_path = hdf5_path
-        print('hdf5 path:', self.hdf5_path)
         self.data_transform = data_transform
         self.len = get_len(self.hdf5_path)
         self.random_mirror = random_mirror
@@ -26,10 +25,6 @@ class LiTSDataset(data.Dataset):
         self.all_seg_keys = list(self.hdf5_file['CT']['seg'].keys())
         
         # some debug messages
-        print('all_img_keys: ', self.all_img_keys)
-        print('all_seg_keys: ', self.all_seg_keys)
-        print('mirror: ', self.random_mirror)
-        print('scale: ', scale)
     def __getitem__(self, index):
         img_key = self.all_img_keys[index]
         seg_key = self.all_seg_keys[index]
@@ -39,7 +34,6 @@ class LiTSDataset(data.Dataset):
         
         if self.random_mirror is True:
             flip_num = randint(0, 7)
-            print('random mirror')
             if flip_num == 1:
                 img = np.flipud(img)
                 seg = np.flipud(seg)
@@ -77,13 +71,16 @@ class LiTSDataset(data.Dataset):
             img = resize(img, (h, w), order=3, mode='edge', cval=0, clip=True, preserve_range=True)
             seg = resize(seg, (h, w), order=3, mode='edge', cval=0, clip=True, preserve_range=True)
         
-        img = normalization(img, max=1, min=0)
+        img = normalization(img, max=1., min=0.)
         
-        img = Image.fromarray(img.astype('uint8'), 'L')
-        seg = Image.fromarray(seg.astype('uint8'), 'L')
+        img = img.reshape(img.shape[0], img.shape[1], -1)
+        seg = seg.reshape(seg.shape[0], seg.shape[1], -1)
         
         img_tensor = []
         seg_tensor = []
+        
+        # to fix ValueError: image has wrong mode issue
+        seg = np.float32(seg)
         
         img_tensor.append(self.data_transform(img).unsqueeze(0))
         seg_tensor.append(self.data_transform(seg).unsqueeze(0))
